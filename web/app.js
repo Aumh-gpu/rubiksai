@@ -1177,10 +1177,14 @@
       </section>
       <section class="set-section" id="set-devices">
         <h3>Your devices</h3>
+        ${s.is_owner && s.public_url ? `
+          <p class="set-note"><b>Secure link</b> (works anywhere, mic and app install included):</p>
+          <button class="code-copy" data-copy="${esc(s.public_url)}"><code>${esc(s.public_url)}</code>${icon('copy')}</button>
+          <p class="set-note">Open it on your phone, sign in, then <b>Add to Home Screen</b>. This address changes each time <code>rubiks tunnel</code> restarts.</p>` : ''}
         ${s.is_owner ? (s.lan_urls.length
-          ? `<p class="set-note">On your phone or tablet (same Wi-Fi), open:</p>${s.lan_urls.map((url) => `<button class="code-copy" data-copy="${esc(url)}"><code>${esc(url)}</code>${icon('copy')}</button>`).join('')}
-             <p class="set-note">Then use <b>Add to Home Screen</b> to install it like an app.</p>`
-          : `<p class="set-note">Phone access is off. In a terminal on this PC, run <code>rubiks serve --lan</code>, then come back here for the link.</p>`) : ''}
+          ? `<p class="set-note">${s.public_url ? 'Same Wi-Fi only (no mic or install on plain http):' : 'On your phone or tablet (same Wi-Fi), open:'}</p>${s.lan_urls.map((url) => `<button class="code-copy" data-copy="${esc(url)}"><code>${esc(url)}</code>${icon('copy')}</button>`).join('')}
+             ${s.public_url ? '' : '<p class="set-note">For the mic and installing the app, run <code>rubiks tunnel</code> on the PC to get a secure https link.</p>'}`
+          : `<p class="set-note">Phone access is off. In a terminal on this PC, run <code>rubiks serve --lan</code>, or <code>rubiks tunnel</code> for a secure link that works anywhere.</p>`) : ''}
         ${s.is_owner ? `<div class="set-row"><span class="set-note">Give a teammate their own login.</span><button class="btn btn-quiet btn-sm" id="invite-btn">Create invite</button></div><div id="invite-out"></div>` : ''}
       </section>
       <section class="set-section">
@@ -1296,15 +1300,33 @@
   }
 
   /* ─── Voice input ──────────────────────────────────────────────────── */
+  // Two engines: the browser's own speech recognition (live words, Chrome/Safari), or
+  // record-and-transcribe through the PC (Gemini) everywhere else. Both need https.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null;
+  const canRecord = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+  let rec = null, recorder = null, recStop = null;
+  let preferRecorder = store.get('preferRecorder', false);
   function setupMic() {
     const mic = $('#mic');
-    mic.hidden = !(SR && window.isSecureContext);
+    mic.hidden = false; // always offered; explains itself when it can't work
+    mic.setAttribute('aria-label', 'Talk to Rubiks');
   }
-  $('#mic').addEventListener('click', () => {
-    const mic = $('#mic');
-    if (rec) { rec.stop(); return; }
+  const MIC_BLOCKED = 'Microphone is blocked for this site. Tap the lock icon next to the address, allow Microphone, then try again.';
+
+  function needSecureLink() {
+    const url = S.settings?.public_url;
+    const b = document.createElement('div');
+    b.style.display = 'contents';
+    b.innerHTML = `<p class="set-note">Phones only allow the microphone (and installing the app) on a secure <b>https://</b> link. You're on a plain local link.</p>
+      ${url ? `<a class="btn btn-primary btn-block" href="${esc(url)}">Open the secure link</a><button class="code-copy" data-copy="${esc(url)}"><code>${esc(url)}</code>${icon('copy')}</button>`
+        : `<p class="set-note">On the PC, run <code>rubiks tunnel</code>. It prints an <b>https://</b> address. Open that on your phone and the mic works.</p>`}`;
+    openModal({ title: 'Voice needs the secure link', body: b });
+  }
+
+  function micOn() { $('#mic').classList.add('listening'); haptic.tap(); unlockAudio(); stopSpeaking(); }
+  function micOff() { $('#mic').classList.remove('listening'); }
+
+  function startBrowserRecognition() {
     rec = new SR();
     rec.lang = navigator.language || 'en-IN';
     rec.interimResults = true;
@@ -1314,13 +1336,55 @@
       for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript; }
       input.value = (finalText + interim).trim(); autosize(); updateSend();
     };
-    rec.onend = () => { mic.classList.remove('listening'); rec = null; if (finalText.trim()) send(finalText, { voice: true }); };
-    rec.onerror = () => { mic.classList.remove('listening'); rec = null; toast("Couldn't hear that. Check microphone access."); };
-    mic.classList.add('listening');
-    haptic.tap();
-    unlockAudio();
-    stopSpeaking();
+    rec.onend = () => { micOff(); rec = null; if (finalText.trim()) send(finalText, { voice: true }); };
+    rec.onerror = (e) => {
+      micOff(); rec = null;
+      if (e.error === 'not-allowed') toast(MIC_BLOCKED);
+      else if (e.error === 'no-speech' || e.error === 'aborted') toast("Didn't hear anything. Tap the mic and speak.");
+      else if (canRecord) { preferRecorder = true; store.set('preferRecorder', true); toast('Switched to a different voice engine. Tap the mic again.'); }
+      else toast("Couldn't hear that. Try again.");
+    };
+    micOn();
     rec.start();
+  }
+
+  async function startRecording() {
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+    catch (e) { toast(e.name === 'NotAllowedError' ? MIC_BLOCKED : "Couldn't open the microphone."); return; }
+    const type = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((t) => MediaRecorder.isTypeSupported?.(t)) || '';
+    recorder = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+    const chunks = [];
+    recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    recorder.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      clearTimeout(recStop);
+      micOff();
+      recorder = null;
+      const blob = new Blob(chunks, { type: (type || 'audio/webm').split(';')[0] });
+      if (blob.size < 800) { toast("Didn't hear anything. Tap, speak, then tap again."); return; }
+      input.placeholder = 'Listening back…';
+      try {
+        const res = await fetch('/api/transcribe', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': blob.type, 'X-Rubiks': '1' }, body: blob });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || d.ok === false) throw new Error(d.error || 'Transcription failed.');
+        if (d.text) send(d.text, { voice: true }); else toast("Didn't catch any words. Try again.");
+      } catch (e) { toast(e.message); }
+      finally { input.placeholder = 'Ask Rubiks to do something…'; }
+    };
+    micOn();
+    recorder.start();
+    input.placeholder = 'Listening… tap the mic when done';
+    recStop = setTimeout(() => recorder?.state === 'recording' && recorder.stop(), 60000);
+  }
+
+  $('#mic').addEventListener('click', () => {
+    if (rec) { rec.stop(); return; }
+    if (recorder) { recorder.stop(); return; }
+    if (!window.isSecureContext) { needSecureLink(); return; }
+    if (SR && !preferRecorder) startBrowserRecognition();
+    else if (canRecord) startRecording();
+    else toast("This browser can't record audio. Try Chrome or Safari.");
   });
 
   /* ─── Global actions & shortcuts ───────────────────────────────────── */

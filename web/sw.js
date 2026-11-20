@@ -1,5 +1,5 @@
 /* Rubiks service worker: network-first app shell, never caches the API. */
-const VERSION = 'rubiks-v6.1.0';
+const VERSION = 'rubiks-v6.2.0';
 const SHELL = ['/', '/app.css', '/app.js', '/manifest.webmanifest', '/icons/icon.svg', '/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

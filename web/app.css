@@ -193,6 +193,7 @@ a { color: inherit; text-underline-offset: 3px; text-decoration-color: var(--lin
 .btn-primary { background: var(--metal); color: var(--metal-ink); box-shadow: var(--metal-shadow); border: 0; }
 .btn-ghost { color: var(--ink-soft); }
 .btn-block { width: 100%; }
+a.btn { text-decoration: none; }
 .btn-sm { min-height: 38px; padding: 0 var(--s4); font-size: 14px; }
 @media (hover: hover) {
   .btn-primary:hover:not(:disabled) { filter: brightness(1.05); }

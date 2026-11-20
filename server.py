@@ -117,9 +117,42 @@ def lan_addresses() -> list:
     return sorted(ip for ip in ips if not ip.startswith("127."))
 
 
+def _via_tunnel() -> bool:
+    """True when the request came in through a local tunnel (cloudflared), which connects from this PC."""
+    return request.remote_addr in ("127.0.0.1", "::1") and bool(
+        request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For"))
+
+
+def client_ip() -> str:
+    """The real visitor's IP. Proxy headers are only trusted when the proxy is on this PC."""
+    if _via_tunnel():
+        ip = request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", "").split(",")[0]
+        return ip.strip() or "?"
+    return request.remote_addr or "?"
+
+
+def is_https() -> bool:
+    return request.is_secure or (_via_tunnel() and request.headers.get("X-Forwarded-Proto", "").lower() == "https")
+
+
+TUNNEL_FILE = os.path.join(config.DATA_DIR, "tunnel_url.txt")
+
+
+def public_url() -> str:
+    """The https address written by `rubiks tunnel` while it runs."""
+    try:
+        if os.path.exists(TUNNEL_FILE) and time.time() - os.path.getmtime(TUNNEL_FILE) < 7 * 86400:
+            with open(TUNNEL_FILE, "r", encoding="utf-8") as f:
+                url = f.read().strip()
+            return url if url.startswith("https://") else ""
+    except Exception:
+        pass
+    return ""
+
+
 def _set_session_cookie(resp, token: str):
     resp.set_cookie(COOKIE, token, max_age=60 * 60 * 24 * 30, httponly=True, samesite="Strict",
-                    secure=request.is_secure, path="/")
+                    secure=is_https(), path="/")
     return resp
 
 
@@ -190,7 +223,7 @@ def bootstrap():
 @app.post("/api/auth/signup")
 def signup():
     data = request.get_json(silent=True) or {}
-    ip = request.remote_addr or "?"
+    ip = client_ip()
     if _rate_limited(f"signup:{ip}"):
         return err("Too many attempts. Wait a few minutes and try again.", 429)
     try:
@@ -206,7 +239,7 @@ def signup():
 @app.post("/api/auth/login")
 def login():
     data = request.get_json(silent=True) or {}
-    ip = request.remote_addr or "?"
+    ip = client_ip()
     key = f"login:{ip}:{(data.get('email') or '').lower()}"
     if _rate_limited(key):
         return err("Too many wrong attempts. Wait 5 minutes and try again.", 429)
@@ -270,6 +303,8 @@ def get_settings():
         lan=STATE["lan"],
         port=STATE["port"],
         lan_urls=[f"http://{ip}:{STATE['port']}" for ip in lan_addresses()] if (is_owner and STATE["lan"]) else [],
+        public_url=public_url() if is_owner else "",
+        secure=is_https(),
         tools=len(guard.load_tools()),
         version=config.VERSION,
     )
@@ -304,6 +339,33 @@ def set_voice():
             return err("That doesn't look like an ElevenLabs voice ID.")
         config.save_env("ELEVENLABS_VOICE_ID", voice_id)
     return jsonify(ok=True, configured=voice.configured())
+
+
+@app.post("/api/transcribe")
+@login_required
+def transcribe():
+    """Speech to text for browsers without built-in speech recognition (the app records, Gemini transcribes)."""
+    audio = request.get_data(cache=False)
+    mime = (request.mimetype or "audio/webm").split(";")[0]
+    if not audio or len(audio) < 800:
+        return err("Didn't catch anything. Hold the mic a little longer.")
+    if not mime.startswith("audio/"):
+        return err("Send audio.")
+    if not config.gemini_keys():
+        return err("Voice typing needs a Gemini key. Add one in Settings.")
+    from google.genai import types
+
+    try:
+        r = llm.generate([
+            types.Part.from_bytes(data=audio, mime_type=mime),
+            "Transcribe this voice message to an AI assistant named Rubiks exactly as spoken, in the language spoken "
+            "(Hinglish stays Hinglish). "
+            "Return only the words, no quotes or notes. If nothing intelligible was said, return an empty string.",
+        ])
+        text = (r.text or "").strip().strip('"')
+    except Exception as e:
+        return err(f"Couldn't transcribe that: {str(e)[:160]}", 502)
+    return jsonify(ok=True, text=text)
 
 
 @app.post("/api/tts")

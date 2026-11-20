@@ -31,7 +31,17 @@ ELEVENLABS_VOICE_ID="…"           # the ElevenLabs voice to use
 
 **Voice:** with ElevenLabs set, every reply's speaker button, voice-mode replies (speak to it, it speaks back), and the original `rubiks voice` assistant all use your voice. Otherwise it falls back to the browser or edge-tts voice.
 
-On your phone: run `rubiks pair` (or Settings → Your devices) for the link, open it on the same Wi-Fi, then **Share → Add to Home Screen**.
+On your phone, the quick way (same Wi-Fi): run `rubiks pair` (or Settings → Your devices) for the link and open it.
+
+**To install the app and talk to it** (mic), phones need a secure `https://` link:
+
+```powershell
+.\rubiks.bat tunnel
+```
+
+That opens a free Cloudflare quick tunnel (no account) and prints an `https://….trycloudflare.com` address, which also appears in Settings → Your devices. Open it on your phone, sign in, then **Add to Home Screen**. It works on mobile data too. It needs `cloudflared.exe` (the command tells you where to get it), and the address changes each time the tunnel restarts. Everything still sits behind your Rubiks login, and sign-up is invite-only after the owner account.
+
+**Voice input:** tap the mic and speak. Chrome and Safari use their built-in recognition (you see words as you talk). Other browsers and home-screen apps record a clip, and your PC transcribes it with Gemini (Hinglish works). Replies to spoken messages are read back in your ElevenLabs voice.
 
 ## Device modes: the AI changes with the screen
 

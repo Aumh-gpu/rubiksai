@@ -600,6 +600,74 @@ def cmd_pair(_args):
     return 0
 
 
+def find_cloudflared() -> str:
+    import shutil
+
+    candidates = [
+        os.environ.get("CLOUDFLARED", ""),
+        shutil.which("cloudflared") or "",
+        r"D:\Tools\cloudflared\cloudflared.exe",
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "cloudflared", "cloudflared.exe"),
+        r"C:\Program Files (x86)\cloudflared\cloudflared.exe",
+    ]
+    return next((c for c in candidates if c and os.path.isfile(c)), "")
+
+
+def cmd_tunnel(_args):
+    """Gives Rubiks a private https:// address through a free Cloudflare quick tunnel."""
+    import re
+
+    exe = find_cloudflared()
+    if not exe:
+        console.print("\n  The Cloudflare tunnel tool isn't installed yet. Download it (official, free, no account):")
+        console.print("    [bold]https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe[/]")
+        console.print(f"  Save it as [bold]D:\\Tools\\cloudflared\\cloudflared.exe[/] (or anywhere, and set CLOUDFLARED to its path),")
+        console.print("  then run [bold]rubiks tunnel[/] again.\n")
+        return 1
+    if not ensure_server():
+        return 1
+    from rubiks_core.config import DATA_DIR
+
+    tunnel_file = os.path.join(DATA_DIR, "tunnel_url.txt")
+    port = SERVER.rsplit(":", 1)[-1].strip("/") or "7575"
+    console.print(f"\n  [{DIM}]Opening a secure tunnel to this PC (port {port})…[/]")
+    proc = subprocess.Popen([exe, "tunnel", "--no-autoupdate", "--url", f"http://localhost:{port}"],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+    url = ""
+    try:
+        for line in proc.stdout:
+            if not url:
+                m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line)
+                if m:
+                    url = m.group(0)
+                    with open(tunnel_file, "w", encoding="utf-8") as f:
+                        f.write(url)
+                    console.print(f"\n  [green]✓[/] Rubiks is live at  [bold]{url}[/]\n")
+                    try:
+                        import qrcode
+
+                        qr = qrcode.QRCode(border=1)
+                        qr.add_data(url)
+                        qr.print_ascii(invert=True)
+                    except ImportError:
+                        pass
+                    console.print("  On your phone: open that link, sign in, then Add to Home Screen.")
+                    console.print("  The mic works there. Keep this window open; Ctrl+C closes the tunnel.")
+                    console.print(f"  [{DIM}]The address changes every time the tunnel restarts.[/]\n")
+            elif "ERR" in line and "failed" in line.lower():
+                console.print(f"  [{DIM}]{line.strip()[:160]}[/]")
+        proc.wait()
+    except KeyboardInterrupt:
+        proc.terminate()
+    finally:
+        try:
+            os.remove(tunnel_file)
+        except OSError:
+            pass
+    console.print(f"  [{DIM}]Tunnel closed.[/]")
+    return 0
+
+
 def cmd_invite(_args):
     if not ensure_server(quiet=True) or not ensure_login():
         return 1
@@ -654,6 +722,7 @@ def main(argv=None):
     s.add_argument("--lan", action="store_true", help="reachable from phones on the same Wi-Fi")
     s.add_argument("--port", type=int, default=int(os.environ.get("RUBIKS_PORT", "7575")))
     sub.add_parser("pair", help="link for your phone")
+    sub.add_parser("tunnel", help="secure https link for your phone, from anywhere (mic + app install)")
     sub.add_parser("invite", help="create a teammate invite (owner)")
     sub.add_parser("key", help="add a Gemini API key (owner)")
     sub.add_parser("login", help="sign the CLI in")
@@ -663,7 +732,7 @@ def main(argv=None):
 
     handlers = {
         None: cmd_chat, "chat": cmd_chat, "ask": cmd_ask, "task": cmd_task, "status": cmd_status, "audit": cmd_audit,
-        "serve": cmd_serve, "pair": cmd_pair, "invite": cmd_invite, "key": cmd_key, "login": cmd_login,
+        "serve": cmd_serve, "pair": cmd_pair, "tunnel": cmd_tunnel, "invite": cmd_invite, "key": cmd_key, "login": cmd_login,
         "logout": cmd_logout, "voice": cmd_voice,
     }
     try:
