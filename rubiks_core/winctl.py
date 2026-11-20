@@ -116,7 +116,7 @@ def focus(win: Window, timeout: float = 2.0) -> bool:
     deadline = time.time() + timeout
     attempt = 0
     while time.time() < deadline:
-        if user32.GetForegroundWindow() == hwnd:
+        if belongs_to(win, user32.GetForegroundWindow()):
             return True
         attempt += 1
         if attempt % 2:
@@ -136,11 +136,28 @@ def focus(win: Window, timeout: float = 2.0) -> bool:
             user32.AttachThreadInput(me, target_thread, False)
             user32.AttachThreadInput(me, fg_thread, False)
         time.sleep(0.15)
-    return user32.GetForegroundWindow() == hwnd
+    return belongs_to(win, user32.GetForegroundWindow())
+
+
+def belongs_to(win: Window, hwnd: int) -> bool:
+    """True if `hwnd` is `win` or part of the same app: an owned window, or a child process such as the
+    WebView2 renderer that apps like WhatsApp Desktop show their content in."""
+    if not hwnd:
+        return False
+    if hwnd == win.hwnd or user32.GetAncestor(hwnd, 3) == win.hwnd:  # GA_ROOTOWNER
+        return True
+    pid = wt.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    if pid.value == win.pid:
+        return True
+    try:
+        return any(p.pid == win.pid for p in psutil.Process(pid.value).parents())
+    except Exception:
+        return False
 
 
 def still_in_front(win: Window) -> bool:
-    return user32.GetForegroundWindow() == win.hwnd
+    return belongs_to(win, user32.GetForegroundWindow())
 
 
 def describe_foreground() -> str:

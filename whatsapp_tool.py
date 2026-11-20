@@ -100,6 +100,10 @@ class _UI:
         return not self.edits() and any(_norm(n) in ("log in", "link with phone number", "get started")
                                        for _, t, n, _ in self.items if t == "ButtonControl")
 
+    def syncing(self):
+        """Just linked: a progress bar while chats download, no search box yet."""
+        return not self.edits() and any(t == "ProgressBarControl" for _, t, _, _ in self.items)
+
     def search_box(self):
         cands = [(c, n, r) for c, n, r in self.edits() if "search" in _norm(n) and self.in_list_pane(r)]
         cands = cands or [(c, n, r) for c, n, r in self.edits() if self.in_list_pane(r)]
@@ -200,6 +204,10 @@ def whatsapp_status() -> str:
         if ui.logged_out():
             return ("WhatsApp Desktop is open but LOGGED OUT, so nothing can be sent. The user must link it: open WhatsApp "
                     "on their phone > Settings > Linked devices > Link a device, and scan the QR code shown on the PC.")
+        if ui.syncing():
+            return "WhatsApp Desktop is logged in but still syncing chats. Wait a minute before sending."
+        if not ui.search_box():
+            return "WhatsApp Desktop is open but its chat list isn't showing yet. Wait a moment and check again."
         return "WhatsApp Desktop is open and logged in. Ready to send."
     except Exception as e:
         return f"Couldn't check WhatsApp: {e}"
@@ -228,10 +236,13 @@ def send_whatsapp_by_name(contact_name: str, message: str) -> str:
     if problem:
         return problem
 
-    ui = _wait(lambda: (lambda u: u if (u.edits() or u.logged_out()) else None)(_UI(win)), timeout=8)
-    if not ui or ui.logged_out():
+    ui = _wait(lambda: (lambda u: u if (u.edits() or u.logged_out()) else None)(_UI(win)), timeout=8) or _UI(win)
+    if ui.logged_out():
         return ("WhatsApp Desktop is LOGGED OUT, so nothing was sent. Link it: on your phone open WhatsApp > Settings > "
                 "Linked devices > Link a device, and scan the QR code on your PC. Then ask again.")
+    if not ui.edits():
+        why = "still syncing chats after linking" if ui.syncing() else "not showing its chat list yet"
+        return f"WhatsApp Desktop is {why}, so nothing was sent. Try again in a minute."
 
     if not winctl.focus(win):
         return (f"Windows wouldn't bring WhatsApp to the front ({winctl.describe_foreground()} stayed in front), "
