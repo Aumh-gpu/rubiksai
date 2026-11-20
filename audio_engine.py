@@ -24,6 +24,19 @@ _tts_queue = queue.Queue()
 _tts_thread = None
 _stop_event = threading.Event()
 
+def _render_speech(text: str, path: str, rate: str = '+15%'):
+    """Writes speech for `text` to `path`: ElevenLabs voice when configured, else edge-tts."""
+    try:
+        from rubiks_core import voice
+        if voice.configured():
+            with open(path, "wb") as f:
+                f.write(voice.synthesize(text))
+            return
+    except Exception as e:
+        print(f"[TTS] ElevenLabs unavailable, using fallback voice: {e}")
+    edge_tts.Communicate(text, TTS_VOICE, rate=rate).save_sync(path)
+
+
 def _tts_worker():
     file_idx = 0
     while True:
@@ -39,9 +52,8 @@ def _tts_worker():
         file_idx += 1
         
         try:
-            communicate = edge_tts.Communicate(text, TTS_VOICE, rate='+15%')
-            communicate.save_sync(temp_file)
-            
+            _render_speech(text, temp_file)
+
             if not _stop_event.is_set():
                 pygame.mixer.music.load(temp_file)
                 pygame.mixer.music.play()
@@ -102,10 +114,8 @@ def speak(text: str):
         # Instantly kill any currently playing speech to unlock the file
         stop_speaking()
         
-        # edge-tts v7+ has a synchronous save method.
-        # Rate +15% to make the voice sound natural and conversational (default is too slow).
-        communicate = edge_tts.Communicate(clean_text, TTS_VOICE, rate='+15%')
-        communicate.save_sync(temp_file)
+        # ElevenLabs when configured; otherwise edge-tts at +15% (default is too slow).
+        _render_speech(clean_text, temp_file)
 
         # Play the generated audio file
         pygame.mixer.music.load(temp_file)

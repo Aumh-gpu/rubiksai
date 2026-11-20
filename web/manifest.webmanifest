@@ -1,0 +1,24 @@
+{
+  "name": "Rubiks",
+  "short_name": "Rubiks",
+  "description": "Your AI operator. It runs on your PC and works from your phone, tablet and desktop.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
+  "background_color": "#070708",
+  "theme_color": "#070708",
+  "categories": ["productivity", "utilities", "business"],
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Show my screen", "url": "/?q=Show%20my%20screen", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "PC status", "url": "/?q=System%20status", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

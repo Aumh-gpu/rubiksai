@@ -1,16 +1,15 @@
 @echo off
-cd /d "%~dp0"
+setlocal
+rem RUBIKS launcher. Double-click for chat, or use it from any terminal:
+rem   rubiks            chat          rubiks serve --lan   phone access
+rem   rubiks ask "..."  one answer    rubiks voice         original voice assistant
 
-if exist ".installed" goto run_rubiks
+if not exist "%~dp0.installed" (
+  echo Installing requirements, one time only...
+  python -m pip install -r "%~dp0requirements.txt"
+  python -m playwright install chromium
+  echo ok> "%~dp0.installed"
+)
 
-echo =======================================
-echo Checking and installing requirements...
-echo =======================================
-pip install -r requirements.txt
-playwright install
-echo Installation Complete > .installed
-cls
-
-:run_rubiks
-python main.py
-pause
+python "%~dp0rubiks_cli.py" %*
+exit /b %ERRORLEVEL%

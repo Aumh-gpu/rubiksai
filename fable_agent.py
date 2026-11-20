@@ -105,16 +105,13 @@ def _log(msg: str, level: str = "INFO"):
 
 def _get_gemini_model():
     """Create a fresh Gemini model instance with a randomly selected API key."""
-    import google.generativeai as genai
-    from config import GEMINI_API_KEYS
+    from rubiks_core import llm
+    from rubiks_core.config import gemini_keys
 
-    if not GEMINI_API_KEYS:
+    if not gemini_keys():
         raise RuntimeError("No Gemini API keys available.")
 
-    key = random.choice(GEMINI_API_KEYS)
-    genai.configure(api_key=key)
-
-    model = genai.GenerativeModel(
+    model = llm.LegacyModel(
         model_name='gemini-2.5-flash',
         system_instruction="""You are the FABLE PLANNER — a strategic reasoning engine inside the RUBIKS AI system.
 Your job is to break down complex, long-horizon goals into precise, executable steps.
@@ -144,11 +141,7 @@ FORMAT:
 
 def _get_executor_model():
     """Create a Gemini model for step execution — translates step descriptions into actual tool calls."""
-    import google.generativeai as genai
-    from config import GEMINI_API_KEYS
-
-    key = random.choice(GEMINI_API_KEYS)
-    genai.configure(api_key=key)
+    from rubiks_core import llm
 
     # Import all the tools the executor can use
     from pc_controller import run_terminal_command, execute_python_script, open_application, open_website, type_text, type_and_enter
@@ -173,7 +166,7 @@ def _get_executor_model():
         analyze_screen,
     ]
 
-    model = genai.GenerativeModel(
+    model = llm.LegacyModel(
         model_name='gemini-2.5-flash',
         tools=tools,
         system_instruction="""You are the FABLE EXECUTOR — the action engine of the RUBIKS AI system.
@@ -188,19 +181,14 @@ You receive a specific step to execute. Use the available tools to complete it p
 
 def _get_verifier_model():
     """Create a Gemini model for self-verification."""
-    import google.generativeai as genai
-    from config import GEMINI_API_KEYS
-
-    key = random.choice(GEMINI_API_KEYS)
-    genai.configure(api_key=key)
-
+    from rubiks_core import llm
     from pc_controller import run_terminal_command
     from file_tools import read_file, list_files, search_files
     from vision_tool import analyze_screen
 
     tools = [run_terminal_command, read_file, list_files, search_files, analyze_screen]
 
-    model = genai.GenerativeModel(
+    model = llm.LegacyModel(
         model_name='gemini-2.5-flash',
         tools=tools,
         system_instruction="""You are the FABLE VERIFIER — a quality assurance engine.

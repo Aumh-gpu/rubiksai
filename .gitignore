@@ -1,0 +1,20 @@
+# secrets
+.env
+
+# private business strategy (kept local; the repo is public)
+PRODUCT_PLAN.md
+
+# local state written by the legacy assistant
+.installed
+memory.json
+chat_memory.txt
+butler_log.txt
+user_profile.json
+fable_reports/
+rubiks_sandbox.py
+*.bak
+
+# python
+__pycache__/
+*.pyc
+.venv/

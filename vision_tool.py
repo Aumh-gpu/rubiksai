@@ -1,7 +1,8 @@
 import pyautogui
 import PIL.Image
-import google.generativeai as genai
 import os
+
+from rubiks_core import llm  # google-genai, key handling and model fallback live here
 
 def get_active_windows() -> str:
     """Returns a list of all currently open window titles, revealing all running apps and browser tabs."""
@@ -47,24 +48,13 @@ def analyze_screen(question: str = "Describe what is currently visible on the sc
             pyautogui.screenshot(screenshot_path)
             
         img = PIL.Image.open(screenshot_path)
-        
-        import random
-        from dotenv import load_dotenv
-        load_dotenv(override=True)
-        gemini_keys_str = os.getenv("GEMINI_API_KEYS", "")
-        fresh_keys = [k.strip() for k in gemini_keys_str.split(",")] if gemini_keys_str else []
-        if not fresh_keys:
-            return "Failed to analyze screen: No Gemini API key found. Use /key to add one."
-            
-        genai.configure(api_key=random.choice(fresh_keys))
-        
-        # Use the highly capable flash model to parse the image visually
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        img.load()
+
         prompt = f"You are the visual cortex for an AI assistant. Analyze this screenshot of the user's computer. Answer this specific query based on the screen: {question}"
         if previous_context:
             prompt += f"\n\nFor context, here is what the screen looked like previously. Notice any changes:\n{previous_context}"
-            
-        response = model.generate_content([prompt, img])
+
+        response = llm.generate([prompt, img])
         
         return f"Screen Analysis Result: {response.text}"
     except Exception as e:
@@ -95,21 +85,11 @@ def click_on_screen(description: str) -> str:
             
         img = PIL.Image.open(screenshot_path)
         
+        img.load()
         screen_w, screen_h = pyautogui.size()
-        
-        import random
-        from dotenv import load_dotenv
-        load_dotenv(override=True)
-        gemini_keys_str = os.getenv("GEMINI_API_KEYS", "")
-        fresh_keys = [k.strip() for k in gemini_keys_str.split(",")] if gemini_keys_str else []
-        if not fresh_keys:
-            return "Failed to find element: No Gemini API key found."
-            
-        genai.configure(api_key=random.choice(fresh_keys))
-        
-        model = genai.GenerativeModel('gemini-2.5-flash')
+
         prompt = f"Return ONLY the bounding box [ymin, xmin, ymax, xmax] scaled 0-1000 for the UI element matching this description: {description}. If multiple match, pick the most relevant one. Do not output any other text."
-        response = model.generate_content([prompt, img])
+        response = llm.generate([prompt, img])
         
         match = re.search(r'\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]', response.text)
         if not match:

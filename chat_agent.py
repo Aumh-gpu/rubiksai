@@ -13,7 +13,7 @@ import pyautogui
 import time
 import os
 import tempfile
-import google.generativeai as genai
+from rubiks_core import llm
 
 # Module-level state
 _chat_thread = None
@@ -24,18 +24,12 @@ def _chat_loop(platform: str) -> None:
     """Internal loop that screenshots the screen, sends to Gemini, and auto-replies."""
     try:
         from pc_controller import type_and_enter
-        from dotenv import load_dotenv
-        load_dotenv(override=True)
-        gemini_keys_str = os.environ.get("GEMINI_API_KEYS", "")
-        fresh_keys = [k.strip() for k in gemini_keys_str.split(",")] if gemini_keys_str else []
-        
-        if not fresh_keys:
+        from rubiks_core.config import gemini_keys
+
+        if not gemini_keys():
             print("[MINI-RUBIKS] No API keys found. Please set them using /key first.", flush=True)
             return
-            
-        genai.configure(api_key=fresh_keys[0])
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        
+
         last_reply = ""
         
         while not _stop_event.is_set():
@@ -57,22 +51,9 @@ def _chat_loop(platform: str) -> None:
                     f"Only output the reply text, nothing else."
                 )
 
-                # Use a random API key to avoid 429 ResourceExhausted
-                import random
-                from dotenv import load_dotenv
-                load_dotenv(override=True)
-                gemini_keys_str = os.environ.get("GEMINI_API_KEYS", "")
-                fresh_keys = [k.strip() for k in gemini_keys_str.split(",")] if gemini_keys_str else []
-                if fresh_keys:
-                    active_key = random.choice(fresh_keys)
-                    genai.configure(api_key=active_key)
-                
-                model = genai.GenerativeModel('gemini-2.5-flash')
-
-                # Upload image and ask Gemini for a reply
+                # llm picks a random key each call (spreads load, avoids 429s)
                 print(f"\n[MINI-RUBIKS] Scanning screen... (Last sent: '{last_reply}')", flush=True)
-                uploaded_file = genai.upload_file(tmp_path)
-                response = model.generate_content([prompt, uploaded_file])
+                response = llm.generate([prompt, screenshot])
                 reply_text = response.text.strip()
                 
                 print(f"[MINI-RUBIKS] AI Decision: {reply_text}", flush=True)

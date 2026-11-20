@@ -1,8 +1,8 @@
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
-import google.generativeai as genai
 from config import GEMINI_API_KEYS, AI_NAME
+from rubiks_core import llm
 from pc_controller import get_system_stats, open_application, run_terminal_command, type_text, open_website, type_and_enter, execute_python_script
 from web_tools import search_web
 from youtube_tool import play_on_youtube
@@ -181,20 +181,14 @@ class RubiksBrain:
         self.setup_session(history=[])
 
     def setup_session(self, history):
+        """Starts a google-genai chat on the current key (model fallback handled by rubiks_core.llm)."""
         if not self.api_keys:
             return
-            
-        current_key = self.api_keys[self.current_key_idx]
-        genai.configure(api_key=current_key)
-        
-        model = genai.GenerativeModel(
-            model_name='gemini-2.5-flash',
+        self.chat_session = llm.chat(
+            system=get_system_prompt(self.user_profile),
             tools=tools,
-            system_instruction=get_system_prompt(self.user_profile)
-        )
-        self.chat_session = model.start_chat(
-            enable_automatic_function_calling=True,
-            history=history
+            history=history,
+            key=self.api_keys[self.current_key_idx % len(self.api_keys)],
         )
 
     def send_message(self, text: str, attempts: int = 0) -> str:
@@ -202,83 +196,36 @@ class RubiksBrain:
             return "My core brain is offline due to missing API keys."
             
         try:
-            append_chat_memory("User", text)
-            if self.api_keys:
-                genai.configure(api_key=self.api_keys[self.current_key_idx])
+            if attempts == 0:
+                append_chat_memory("User", text)
             response = self.chat_session.send_message(text)
             self.failed_keys_count = 0
-            
-            try:
-                response_text = response.text
-            except ValueError:
-                response_text = "Action executed."
-                
-            if response_text and response_text != "Action executed.":
+            response_text = (response.text or "").strip() or "Action executed."
+            if response_text != "Action executed.":
                 append_chat_memory("RUBIKS", response_text)
-                
             return response_text
-        except Exception as e:
-            if attempts >= len(self.api_keys):
+        except Exception:
+            if attempts + 1 >= len(self.api_keys):
+                # Out of keys: fall back to the offline command engine.
+                # (The old unofficial g4f proxy fallback was removed: ToS and reliability risk.)
                 try:
-                    import g4f
-                    response = g4f.ChatCompletion.create(
-                        model=g4f.models.gpt_4o,
-                        messages=[{"role": "user", "content": text}]
-                    )
-                    return response if response else "I am operating on the shadow proxy. My connection is unstable."
-                except Exception as g4f_e:
-                    try:
-                        if not hasattr(self, 'local_backup'):
-                            from local_brain import LocalBrain
-                            self.local_backup = LocalBrain()
-                        return self.local_backup.send_message(text)
-                    except Exception as e:
-                        return f"All brain systems offline. Error: {e}"      
+                    if not hasattr(self, 'local_backup'):
+                        from local_brain import LocalBrain
+                        self.local_backup = LocalBrain()
+                    return self.local_backup.send_message(text)
+                except Exception as e:
+                    return f"All brain systems offline. Error: {e}"
             self.current_key_idx = (self.current_key_idx + 1) % len(self.api_keys)
-            self.setup_session(history=self.chat_session.history if self.chat_session else [])
+            self.setup_session(history=self.chat_session.get_history() if self.chat_session else [])
             return self.send_message(text, attempts=attempts + 1)
 
     def send_message_stream(self, text: str, chunk_callback=None, attempts: int = 0) -> str:
-        if not self.chat_session:
-            return "My core brain is offline due to missing API keys."
-            
-        try:
-            append_chat_memory("User", text)
-            if self.api_keys:
-                genai.configure(api_key=self.api_keys[self.current_key_idx])
-                
-            response = self.chat_session.send_message(text, stream=True)
-            self.failed_keys_count = 0
-            
-            full_text = ""
-            current_sentence = ""
-            import re
-            
-            for chunk in response:
-                if chunk.text:
-                    full_text += chunk.text
-                    current_sentence += chunk.text
-                    splits = re.split(r'(?<=[.!?])\s+', current_sentence)
-                    if len(splits) > 1:
-                        for s in splits[:-1]:
-                            if chunk_callback and s.strip():
-                                chunk_callback(s.strip())
-                        current_sentence = splits[-1]
-            
-            if current_sentence.strip() and chunk_callback:
-                chunk_callback(current_sentence.strip())
-                
-            if full_text:
-                append_chat_memory("RUBIKS", full_text)
-                
-            return full_text
-            
-        except Exception as e:
-            full_text = self.send_message(text)
-            if chunk_callback:
-                import re
-                splits = re.split(r'(?<=[.!?])\s+', full_text)
-                for s in splits:
-                    if s.strip():
-                        chunk_callback(s.strip())
-            return full_text
+        """Tool calls can't stream, so answer fully, then hand sentences to the voice one by one."""
+        import re
+
+        full_text = self.send_message(text)
+        if chunk_callback:
+            for s in re.split(r'(?<=[.!?])\s+', full_text):
+                if s.strip():
+                    chunk_callback(s.strip())
+        return full_text
