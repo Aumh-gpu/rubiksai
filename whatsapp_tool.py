@@ -187,6 +187,41 @@ def _vision_header(win) -> str:
         return ""
 
 
+def _own_number_file() -> str:
+    from rubiks_core.config import DATA_DIR
+    return os.path.join(DATA_DIR, "whatsapp_own_number.txt")
+
+
+def _remember_own(digits: str):
+    try:
+        with open(_own_number_file(), "w", encoding="utf-8") as f:
+            f.write(digits)
+    except Exception:
+        pass
+
+
+def _own_number() -> str:
+    """Digits of the user's own number: remembered locally, or read from the '(You)' chat in the chat list."""
+    try:
+        with open(_own_number_file(), "r", encoding="utf-8") as f:
+            cached = f.read().strip()
+        if cached.isdigit():
+            return cached
+    except Exception:
+        pass
+    win = _window(launch=False)
+    if not win:
+        return ""
+    ui = _UI(win)
+    for _, t, n, r in ui.items:
+        m = re.match(r"\s*([+\d][\d\s()-]{8,})\s*\(You\)", n or "")
+        if m and ui.in_list_pane(r):
+            digits = "".join(ch for ch in m.group(1) if ch.isdigit())
+            _remember_own(digits)
+            return digits
+    return ""
+
+
 # ─── Tools ───────────────────────────────────────────────────────────────────
 
 def whatsapp_status() -> str:
@@ -228,6 +263,16 @@ def send_whatsapp_by_name(contact_name: str, message: str) -> str:
     contact_name = (contact_name or "").strip()
     if not contact_name or not (message or "").strip():
         return "Need both a contact name and a message."
+
+    # A phone number, or "me": WhatsApp's own link opens exactly the right chat.
+    digits = "".join(ch for ch in contact_name if ch.isdigit())
+    if len(digits) >= 10 and re.fullmatch(r"[+\d\s()-]+", contact_name):
+        return send_whatsapp_message(digits, message)
+    if _norm(contact_name) in ("me", "myself", "yourself", "self", "you", "message yourself", "my own number"):
+        own = _own_number()
+        if not own:
+            return "Couldn't find your own '(You)' chat in WhatsApp. Open it once in WhatsApp, then try again."
+        return send_whatsapp_message(own, message)
 
     win = _window()
     if not win:
@@ -290,10 +335,10 @@ def send_whatsapp_by_name(contact_name: str, message: str) -> str:
             _click(target[0])
             chat_title = target[1]
         else:
-            # No named result exposed; open the top result and rely on the header check below.
-            pyautogui.press("down")
-            pyautogui.press("enter")
-            chat_title = contact_name
+            pyautogui.hotkey("ctrl", "a")
+            pyautogui.press("backspace")
+            return (f"No chat called '{contact_name}' showed up in WhatsApp search, so nothing was sent. "
+                    f"Check the exact name as saved in WhatsApp, or give the phone number.")
         time.sleep(0.8)
 
         # 3. Confirm the right chat is open (accessibility names first, screenshot check as backup)
@@ -376,4 +421,7 @@ def send_whatsapp_message(phone_number: str, message: str) -> str:
         if not winctl.focus(win):
             return "Windows wouldn't bring WhatsApp to the front, so the message is typed but not sent."
         pyautogui.press("enter")
+    if any("(you)" in _norm(n) for n in ui.header_names()):
+        _remember_own(phone)  # this was the user's own chat; "message me" will find it next time
+        return "Sent to your own chat on WhatsApp."
     return f"Sent to +{phone} on WhatsApp."
