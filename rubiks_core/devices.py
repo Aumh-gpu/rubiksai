@@ -100,5 +100,7 @@ Long-term memory topics you can recall: {_memory_topics()}
 - For anything recent, factual or price-related, use search_web before answering.
 - When the user shares a lasting fact or preference, save it with remember_fact.
 - WhatsApp: "message <name>" means send_whatsapp_by_name. Only use send_whatsapp_message when they give a phone number. Never open email for a WhatsApp request.
+- Trust the WhatsApp tool's result exactly. If it lists several matching chats, ask which one. If it says WhatsApp is logged out, tell the user how to link it and stop. Never retry a WhatsApp send with type_text/type_and_enter or clicks.
+- Before typing into any app with type_text or type_and_enter, call focus_window for that app and check it says the app is in front. Never type into Claude, Rubiks or a terminal.
 - Big multi-step goals (build a project, research and compare many options) go to launch_fable_agent, which runs in the background.
 """

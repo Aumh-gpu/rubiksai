@@ -74,6 +74,8 @@ TOOL_SPECS = [
     ("chat_agent", "start_chat_agent", "risky", "Auto-reply to chats as you"),
     ("fable_agent", "launch_fable_agent", "risky", "Start an autonomous task"),
     ("website_builder_tool", "build_business_website", "risky", "Build a website"),
+    ("whatsapp_tool", "whatsapp_status", "read", "Check WhatsApp"),
+    ("rubiks_core.winctl", "focus_window", "open", "Bring a window to the front"),
     ("rubiks_core.extra_tools", "show_my_screen", "read", "Show the PC screen"),
     ("rubiks_core.extra_tools", "get_task_status", "read", "Check task progress"),
 ]

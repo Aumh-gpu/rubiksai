@@ -14,3 +14,4 @@ Flask>=3.0.0
 Pillow>=10.2.0
 mss>=10.2.0
 playwright
+uiautomation>=2.0

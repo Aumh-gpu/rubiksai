@@ -152,30 +152,20 @@ def type_text(text: str) -> str:
 def type_and_enter(text: str) -> str:
     """Types the provided text using the keyboard and then presses the Enter key. Use this to send messages in active chats."""
     try:
-        import pygetwindow as gw
-        
-        # Try to find WhatsApp or Comet windows
-        target_window = None
-        for win in gw.getAllWindows():
-            title = win.title.lower()
-            if 'whatsapp' in title or 'comet' in title or 'chrome' in title:
-                target_window = win
-                break
-                
-        if target_window:
-            try:
-                target_window.restore()
-                target_window.activate()
-                pyautogui.sleep(0.5)
-                # Click the center of the window to ensure the input field is ready
-                pyautogui.click(target_window.center.x, target_window.center.y + 200)
-                pyautogui.sleep(0.2)
-            except Exception:
-                pass
-        
+        # Types into whatever window is in front right now. Use focus_window first to pick the app;
+        # for WhatsApp messages use send_whatsapp_by_name, which verifies the chat before sending.
+        from rubiks_core import winctl
+
+        before = winctl.foreground_hwnd()
+        target = winctl.describe_foreground()
+        if any(w in target.lower() for w in ("claude", "rubiks", "windowsterminal", "cmd.exe", "powershell")):
+            return (f"{target} is in front, so nothing was typed (that's not a chat app). "
+                    f"Call focus_window with the app you mean first.")
         type_text(text)
+        if winctl.foreground_hwnd() != before:
+            return "The window in front changed while typing, so Enter was NOT pressed. Check the PC."
         pyautogui.press('enter')
-        return "Text typed and entered successfully."
+        return f"Typed and pressed Enter in {target}."
     except Exception as e:
         return f"Failed to type and enter text: {str(e)}"
 

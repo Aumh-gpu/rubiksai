@@ -4,6 +4,9 @@
 # private business strategy (kept local; the repo is public)
 PRODUCT_PLAN.md
 
+# WhatsApp Web login session (Playwright profile) - private
+.whatsapp_profile/
+
 # local state written by the legacy assistant
 .installed
 memory.json
